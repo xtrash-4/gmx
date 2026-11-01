@@ -360,7 +360,8 @@ test('createRoadPaintMaterial caches one material, gates dry/distant noise, and 
     }),
     dot: (a, b) => new TNode(() => { const va = arr(a), vb = arr(b); return [va.reduce((s, x, i) => s + x * vb[i], 0)]; }),
     length: (v) => new TNode(() => [Math.hypot(...arr(v))]),
-    fwidth: () => wrap([0.01])
+    fwidth: () => wrap([0.01]),
+    QUALITY: { ssr: true } // Android build: the desktop profile keeps the SSR outputs
   };
 
   const createRoadPaintMaterial = vm.runInNewContext(`${helpers}\n${roadPaintMatSrc}\ncreateRoadPaintMaterial;`, sandbox);

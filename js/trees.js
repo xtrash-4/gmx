@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { QUALITY } from './quality.js';
 import { createTreeMaterial } from './tsl-materials.js';
 import { polygonBoxOverlaps } from './building-collision.js';
 
@@ -806,13 +807,14 @@ function buildTreeGeometries(speciesIndex, variant, tileMeters) {
 // 5. TREE FIELD: per-tree level of detail, with spatial cells culled separately in the view and shadow passes
 // =====================================================================================================================
 const TREE_CELL_SIZE = 200;
-const LOD_NEAR = 105; // full detail within (m)
-const LOD_MID = 420; // coarse cards & branches within; whole-crown cards beyond
+// Phones pull every tree LOD ring in (QUALITY.treeLodScale, 1 on desktop)
+const LOD_NEAR = Math.round(105 * QUALITY.treeLodScale); // full detail within (m)
+const LOD_MID = Math.round(420 * QUALITY.treeLodScale); // coarse cards & branches within; whole-crown cards beyond
 const LOD_HYSTERESIS = 6;
 // Draw distance per tier (0 park & plaza, 1 avenue & esplanade, 2 cross-street); at street level everything beyond
 // LOW_CUTOFF is behind the buildings anyway
-const MAX_DIST = [3000, 1600, 950];
-const LOW_CUTOFF = 1150;
+const MAX_DIST = [3000, 1600, 950].map((d) => Math.round(d * QUALITY.treeLodScale));
+const LOW_CUTOFF = Math.round(1150 * QUALITY.treeLodScale);
 
 function hashPos(x, y, z) {
   const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;

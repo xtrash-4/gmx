@@ -1,6 +1,17 @@
 // Touch input stays separate from the keyboard, so releasing a finger never releases a held key.
-const DEAD_ZONE = 0.15;
-const MAX_RADIUS = 44;
+// Android build: a joystick (left thumb) plus big action buttons (right thumb) that change with the travel mode.
+// The joystick and the buttons can drive the same action (the stick's forward and the GAS button): the strongest wins.
+const DEAD_ZONE = 0.12;
+const MAX_RADIUS = 52;
+const MOVE_ACTIONS = ['forward', 'backward', 'left', 'right', 'up', 'down'];
+
+// Which buttons show in each mode, and their labels
+const BUTTON_LAYOUT = {
+  person: { forward: 'RUN', up: 'JUMP' },
+  car: { forward: 'GAS', backward: 'BRAKE', horn: 'HORN' },
+  cyclist: { forward: 'PEDAL', backward: 'BRAKE' },
+  helicopter: { up: 'UP', down: 'DOWN', forward: 'FWD' }
+};
 
 class TouchControls {
   constructor(controllerManager) {
@@ -8,13 +19,15 @@ class TouchControls {
     this.root = document.getElementById('touch-controls');
     this.stick = document.getElementById('touch-stick');
     this.knob = document.getElementById('touch-stick-knob');
-    this.buttons = this.root ? [...this.root.querySelectorAll('[data-touch-action]')] : [];
+    this.buttons = this.root ? [...this.root.querySelectorAll('[data-touch-action], [data-touch-tap]')] : [];
     this.buttonPointers = new Map();
     this.stickPointer = null;
+    this.stickValues = {};
     this.enabled = true;
     this.available = false;
     this.touchSeen = false;
     this.onAvailabilityChange = null;
+    this.onTap = null; // (name) => void, for one-shot buttons such as the horn
     this.media = window.matchMedia('(any-pointer: coarse)');
 
     if (!this.root || !this.stick || !this.knob) return;
@@ -27,7 +40,7 @@ class TouchControls {
       this.stickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       this.stickRadius = Math.min(MAX_RADIUS, Math.min(rect.width, rect.height) / 2) || MAX_RADIUS;
       this.stickPointer = event.pointerId;
-      this.stick.setPointerCapture(event.pointerId);
+      try { this.stick.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
       this.stick.classList.add('is-pressed');
       this.moveStick(event);
     });
@@ -43,17 +56,27 @@ class TouchControls {
 
     for (const button of this.buttons) {
       const action = button.getAttribute('data-touch-action');
+      const tap = button.getAttribute('data-touch-tap');
       button.addEventListener('pointerdown', (event) => {
         if (!this.canInteract() || button.hidden || event.button !== 0 || this.buttonPointers.has(event.pointerId) || event.pointerId === this.stickPointer) return;
         event.preventDefault();
         event.stopPropagation();
+        globalThis.navigator?.vibrate?.(8); // short haptic tick on Android
+        if (tap) {
+          button.classList.add('is-pressed');
+          setTimeout(() => button.classList.remove('is-pressed'), 140);
+          if (typeof this.onTap === 'function') this.onTap(tap);
+          return;
+        }
         this.buttonPointers.set(event.pointerId, { button, action });
-        button.setPointerCapture(event.pointerId);
-        this.updateButton(button, action);
+        this.updateButton(button);
+        try { button.setPointerCapture(event.pointerId); } catch { /* pointer already gone */ }
       });
       for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
         button.addEventListener(type, (event) => this.releaseButton(event.pointerId));
       }
+      // A long press must not open the Android context menu
+      button.addEventListener('contextmenu', (event) => event.preventDefault());
     }
 
     this.media.addEventListener('change', () => this.updateAvailability());
@@ -94,16 +117,20 @@ class TouchControls {
   }
 
   setMode(mode) {
-    if (!['person', 'car', 'cyclist', 'helicopter'].includes(mode)) return;
+    if (!BUTTON_LAYOUT[mode]) return;
     this.reset();
+    this.mode = mode;
     if (!this.root) return;
-    const labels = { up: mode === 'helicopter' ? 'Ascend' : 'Jump', down: 'Descend' };
+    this.root.dataset.mode = mode;
+    const layout = BUTTON_LAYOUT[mode];
     for (const button of this.buttons) {
-      const action = button.getAttribute('data-touch-action');
-      button.hidden = (action === 'up' && mode !== 'person' && mode !== 'helicopter') || (action === 'down' && mode !== 'helicopter');
-      button.setAttribute('aria-label', labels[action]);
-      const label = this.root.querySelector(`[data-touch-label="${action}"]`);
-      if (label) label.textContent = labels[action];
+      const key = button.getAttribute('data-touch-action') || button.getAttribute('data-touch-tap');
+      const label = layout[key];
+      button.hidden = !label;
+      if (!label) continue;
+      button.setAttribute('aria-label', label);
+      const text = button.querySelector('[data-touch-label]');
+      if (text) text.textContent = label;
     }
   }
 
@@ -117,10 +144,19 @@ class TouchControls {
     const y = distance ? dy / distance : 0;
     this.knob.style.setProperty('--stick-x', `${x * reach * this.stickRadius}px`);
     this.knob.style.setProperty('--stick-y', `${y * reach * this.stickRadius}px`);
-    this.controller.setTouchInput('left', Math.max(0, -x * strength));
-    this.controller.setTouchInput('right', Math.max(0, x * strength));
-    this.controller.setTouchInput('forward', Math.max(0, -y * strength));
-    this.controller.setTouchInput('backward', Math.max(0, y * strength));
+    this.stickValues.left = Math.max(0, -x * strength);
+    this.stickValues.right = Math.max(0, x * strength);
+    this.stickValues.forward = Math.max(0, -y * strength);
+    this.stickValues.backward = Math.max(0, y * strength);
+    this.apply();
+  }
+
+  // Blend the stick and the held buttons into the controller's touch input
+  apply() {
+    const held = new Set([...this.buttonPointers.values()].map((pointer) => pointer.action));
+    for (const action of MOVE_ACTIONS) {
+      this.controller.setTouchInput(action, held.has(action) ? 1 : (this.stickValues[action] || 0));
+    }
   }
 
   releaseCapture(element, pointerId) {
@@ -134,15 +170,15 @@ class TouchControls {
     this.stick.classList.remove('is-pressed');
     this.knob.style.setProperty('--stick-x', '0px');
     this.knob.style.setProperty('--stick-y', '0px');
-    for (const action of ['forward', 'backward', 'left', 'right']) this.controller.setTouchInput(action, 0);
+    this.stickValues = {};
+    this.apply();
   }
 
-  updateButton(button, action) {
-    const held = [...this.buttonPointers.values()];
-    const pressed = held.some((pointer) => pointer.button === button);
+  updateButton(button) {
+    const pressed = [...this.buttonPointers.values()].some((pointer) => pointer.button === button);
     button.classList.toggle('is-pressed', pressed);
     button.setAttribute('aria-pressed', String(pressed));
-    this.controller.setTouchInput(action, held.some((pointer) => pointer.action === action) ? 1 : 0);
+    this.apply();
   }
 
   releaseButton(pointerId) {
@@ -150,16 +186,17 @@ class TouchControls {
     if (!pointer) return;
     this.buttonPointers.delete(pointerId);
     this.releaseCapture(pointer.button, pointerId);
-    this.updateButton(pointer.button, pointer.action);
+    this.updateButton(pointer.button);
   }
 
   reset() {
     this.releaseStick(this.stickPointer);
-    for (const pointerId of this.buttonPointers.keys()) this.releaseButton(pointerId);
+    for (const pointerId of [...this.buttonPointers.keys()]) this.releaseButton(pointerId);
     for (const button of this.buttons) {
       button.classList.remove('is-pressed');
       button.setAttribute('aria-pressed', 'false');
     }
+    this.stickValues = {};
     this.controller.clearTouchInput();
   }
 }

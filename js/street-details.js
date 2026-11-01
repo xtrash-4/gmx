@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { QUALITY } from './quality.js';
 import { Fn, float, color, positionWorld, uniform, mod, fract, step, smoothstep, mix } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
@@ -998,10 +999,11 @@ function buildStreetDetails(scene, colliders = []) {
     streetPointSites.push({ x: s.x, y: s.y, z: s.z, color: 0xffe4b4, intensity: 32, dist: 14.0 });
   }
 
-  const STREETLIGHT_SPOT_POOL = 36;
-  const STREET_POINT_POOL = 48;
-  const STREETLIGHT_DIST = 115;
-  const STREET_POINT_DIST = 110;
+  // Light pools and their reach shrink on phones (quality.js): each active light costs every lit pixel near it
+  const STREETLIGHT_SPOT_POOL = QUALITY.streetSpotPool;
+  const STREET_POINT_POOL = QUALITY.streetPointPool;
+  const STREETLIGHT_DIST = 115 * QUALITY.lightDistanceScale;
+  const STREET_POINT_DIST = 110 * QUALITY.lightDistanceScale;
 
   const streetLightsGroup = new THREE.Group();
   streetLightsGroup.name = 'StreetClusteredLights';

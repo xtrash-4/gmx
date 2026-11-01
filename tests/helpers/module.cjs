@@ -2,7 +2,31 @@ const vm = require('node:vm');
 
 // Keep the existing isolated unit harnesses synchronous. Only the app's static import/export declarations
 // are adapted; dependencies are explicit namespace stubs, and the production function bodies run unchanged.
+// Android build: modules read the graphics profile from ./quality.js. Unless a test stubs it, load the real module
+// as a desktop browser would see it, so the tests exercise the original (High) settings.
+let desktopQuality = null;
+function getDesktopQuality() {
+  if (!desktopQuality) {
+    const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', '..', 'js', 'quality.js'), 'utf8');
+    desktopQuality = loadModule(source, {
+      filename: 'quality.js',
+      globals: {
+        navigator: { userAgent: 'node' },
+        screen: {},
+        location: { search: '', href: 'http://localhost/' },
+        localStorage: { getItem: () => null, setItem() {} },
+        URLSearchParams,
+        URL
+      }
+    });
+  }
+  return desktopQuality;
+}
+
 function loadModule(source, { imports = {}, globals = {}, filename = 'module.js' } = {}) {
+  if (!Object.hasOwn(imports, './quality.js') && /from\s+['"]\.\/quality\.js['"]/.test(source)) {
+    imports = { ...imports, './quality.js': getDesktopQuality() };
+  }
   const exported = [];
   const names = (list) => list.split(',').map((name) => name.trim()).filter(Boolean).map((name) => {
     const match = /^([\w$]+)(?:\s+as\s+([\w$]+))?$/.exec(name);

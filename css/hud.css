@@ -1,0 +1,511 @@
+/* css/hud.css: the Android build's HUD. Simple and thumb-friendly: radar top-left, travel modes top-centre, four
+   round buttons top-right, speedometer bottom-centre, joystick and action buttons in the bottom corners. */
+
+:root {
+  --ui-glass: rgba(14, 15, 18, 0.58);
+  --ui-glass-strong: rgba(14, 15, 18, 0.82);
+  --ui-line: rgba(255, 255, 255, 0.12);
+  --ui-blur: blur(14px) saturate(1.4);
+  --ui-safe-t: max(14px, env(safe-area-inset-top));
+  --ui-safe-r: max(14px, env(safe-area-inset-right));
+  --ui-safe-b: max(14px, env(safe-area-inset-bottom));
+  --ui-safe-l: max(14px, env(safe-area-inset-left));
+}
+
+.ui {
+  position: fixed;
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out);
+}
+.ui > * { pointer-events: auto; }
+
+/* Glass surface shared by every HUD element */
+.ui-radar,
+.ui-modes,
+.ui-icon-btn,
+.ui-speedo {
+  background: var(--ui-glass);
+  border: 1px solid var(--ui-line);
+  backdrop-filter: var(--ui-blur);
+  -webkit-backdrop-filter: var(--ui-blur);
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* ---------- Top-left: radar ---------- */
+.ui-tl {
+  top: var(--ui-safe-t);
+  left: var(--ui-safe-l);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ui-radar {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+}
+.ui-radar canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ui-radar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.ui-radar-north {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  translate: -50% 0;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--taxi);
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+
+.ui-tl-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 4px;
+}
+.ui-tl-info .location { max-width: 260px; }
+
+.ui-fps {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ui-glass);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.ui-fps .fps-ok { color: var(--ok); }
+.ui-fps .fps-warn { color: var(--warn); }
+.ui-fps .fps-bad { color: var(--bad); }
+
+/* ---------- Top-centre: travel modes ---------- */
+.ui-modes {
+  top: var(--ui-safe-t);
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+}
+.ui-modes .mode-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: var(--ind-w, 0);
+  border-radius: 999px;
+  background: var(--taxi);
+  transform: translateX(var(--ind-x, 0));
+  transition: transform 0.35s var(--ease-out), width 0.35s var(--ease-out);
+  pointer-events: none;
+}
+.ui-mode {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 650;
+  transition: color 0.2s;
+}
+.ui-mode:hover { color: var(--text); }
+.ui-mode.active { color: var(--taxi-ink); }
+.ui-mode .icon { width: 20px; height: 20px; }
+
+/* ---------- Top-right: round buttons ---------- */
+.ui-tr {
+  top: var(--ui-safe-t);
+  right: var(--ui-safe-r);
+  display: flex;
+  gap: 8px;
+}
+.ui-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  color: var(--text);
+  transition: background 0.2s, transform 0.12s;
+}
+.ui-icon-btn:hover,
+.ui-icon-btn.is-open { background: var(--ui-glass-strong); color: var(--taxi); }
+.ui-icon-btn:active { transform: scale(0.92); }
+.ui-icon-btn .icon { width: 20px; height: 20px; }
+
+/* ---------- Bottom-centre: speedometer ---------- */
+.ui-bc {
+  bottom: var(--ui-safe-b);
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.ui-speedo {
+  min-width: 210px;
+  padding: 8px 10px 9px;
+  border-radius: 20px;
+  text-align: center;
+}
+.ui-speedo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.ui-speed {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+#hud-speed {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.ui-speed-unit {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+.ui-cam-step {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: var(--text-2);
+}
+.ui-cam-step:hover { background: var(--hover); color: var(--text); }
+.ui-meter {
+  height: 4px;
+  margin: 6px 4px 6px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+#hud-speed-meter {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--taxi), #ff8a1a);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.25s linear;
+}
+.ui-speedo-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+body:not([data-mode='helicopter']) .ui-alt { display: none; }
+
+/* ---------- Settings popover ---------- */
+.ui-settings { width: 300px; }
+.ui-quality-now {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--taxi);
+  color: var(--taxi-ink);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ui-seg {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin: 0 6px 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.ui-seg-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 44px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.ui-seg-btn:hover { background: var(--hover); color: var(--text); }
+.ui-seg-btn.active { background: var(--taxi); color: var(--taxi-ink); }
+.ui-settings-note {
+  margin: 0 10px 8px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ui-toggles {
+  display: flex;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--divider);
+}
+.ui-toggle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.05);
+}
+.ui-toggle:hover { background: var(--hover); color: var(--text); }
+.ui-toggle[hidden] { display: none; }
+#btn-sound[aria-pressed='false'] { color: var(--text-3); }
+
+/* ---------- Clean view ---------- */
+.ui-show-hud {
+  position: fixed;
+  z-index: 11;
+  top: var(--ui-safe-t);
+  right: var(--ui-safe-r);
+  display: none;
+  opacity: 0.7;
+}
+body.hud-minimized .ui { opacity: 0; pointer-events: none; }
+body.hud-minimized .ui > * { pointer-events: none; }
+body.hud-minimized .ui-show-hud { display: grid; }
+
+/* ---------- Loading: tap to play ---------- */
+.loader-play {
+  margin-top: 18px;
+  padding: 14px 34px;
+  border-radius: 999px;
+  background: var(--taxi);
+  color: var(--taxi-ink);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 30px -8px rgba(255, 194, 26, 0.55);
+  animation: ui-pulse 1.6s ease-in-out infinite;
+}
+.loader-play[hidden],
+.loader-track[hidden] { display: none; }
+@keyframes ui-pulse {
+  50% { transform: scale(1.05); }
+}
+
+/* ---------- Touch controls ---------- */
+#touch-controls {
+  position: fixed;
+  z-index: 12;
+  left: var(--ui-safe-l);
+  right: var(--ui-safe-r);
+  bottom: var(--ui-safe-b);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  pointer-events: none;
+  -webkit-touch-callout: none;
+}
+#touch-controls[hidden] { display: none; }
+
+#touch-stick {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0 45%, rgba(255, 255, 255, 0.1) 46% 47%, transparent 48%), var(--ui-glass);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: var(--ui-blur);
+  -webkit-backdrop-filter: var(--ui-blur);
+  pointer-events: auto;
+  touch-action: none;
+}
+#touch-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #d9d6cf);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  transform: translate(calc(-50% + var(--stick-x, 0px)), calc(-50% + var(--stick-y, 0px)));
+  pointer-events: none;
+}
+#touch-stick.is-pressed #touch-stick-knob { background: radial-gradient(circle at 35% 30%, #ffe27a, var(--taxi)); }
+
+/* Action buttons sit in four slots round the right thumb: A (big, bottom-right), B (left of A), C (above A),
+   D (above B). Each travel mode puts its buttons in the slots that suit it. */
+.touch-pad {
+  position: relative;
+  width: 230px;
+  height: 196px;
+}
+.touch-btn {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 50%;
+  background: var(--ui-glass-strong);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  pointer-events: auto;
+  touch-action: none;
+  transition: transform 0.08s, background 0.12s;
+}
+.touch-btn[hidden] { display: none; }
+.touch-btn .icon { width: 22px; height: 22px; stroke-width: 2.4; }
+.touch-btn.is-pressed { transform: scale(0.9); background: var(--taxi); color: var(--taxi-ink); border-color: var(--taxi); }
+
+/* Slots */
+
+#touch-controls[data-mode='car'] .touch-btn-main,
+#touch-controls[data-mode='cyclist'] .touch-btn-main,
+#touch-controls[data-mode='person'] .touch-btn-up,
+#touch-controls[data-mode='helicopter'] .touch-btn-main {
+  right: 0; bottom: 0; width: 92px; height: 92px;
+  background: rgba(255, 194, 26, 0.22); border-color: rgba(255, 194, 26, 0.7); color: #ffe7a3;
+}
+#touch-controls[data-mode='car'] .touch-btn-main .icon,
+#touch-controls[data-mode='cyclist'] .touch-btn-main .icon,
+#touch-controls[data-mode='person'] .touch-btn-up .icon,
+#touch-controls[data-mode='helicopter'] .touch-btn-main .icon { width: 28px; height: 28px; }
+
+#touch-controls[data-mode='car'] .touch-btn-alt,
+#touch-controls[data-mode='cyclist'] .touch-btn-alt,
+#touch-controls[data-mode='person'] .touch-btn-main,
+#touch-controls[data-mode='helicopter'] .touch-btn-down {
+  right: 104px; bottom: 0; width: 72px; height: 72px;
+}
+
+#touch-controls[data-mode='car'] .touch-btn-horn,
+#touch-controls[data-mode='helicopter'] .touch-btn-up {
+  right: 12px; bottom: 106px; width: 66px; height: 66px;
+}
+
+/* Desktop keyboard guide never shows on touch screens */
+body.touch-enabled .controls-hint,
+body.touch-enabled kbd { display: none; }
+body.touch-enabled .pop-item { min-height: 44px; }
+body.touch-enabled .map-controls .icon-btn { width: 44px; height: 44px; }
+
+/* ---------- Phones in landscape (short screens) ---------- */
+@media (max-height: 520px) {
+  .ui-radar { width: 112px; height: 112px; }
+  .ui-tl-info .location { max-width: 200px; }
+  .ui-mode { height: 38px; padding: 0 12px; }
+  .ui-mode-label { display: none; }
+  .ui-icon-btn { width: 42px; height: 42px; }
+  .ui-speedo { min-width: 170px; padding: 6px 8px 7px; }
+  #hud-speed { font-size: 32px; }
+  .ui-speedo-sub { display: none; }
+  #touch-stick { width: 130px; height: 130px; }
+  #touch-stick-knob { width: 54px; height: 54px; }
+  .touch-pad { transform: scale(0.9); transform-origin: bottom right; }
+  .popover { max-height: calc(100vh - 80px) !important; }
+}
+
+/* Narrow windows: drop the mode labels and the street signs */
+@media (max-width: 760px) {
+  .ui-mode-label { display: none; }
+  .ui-mode { padding: 0 12px; }
+  .ui-tl-info .location { display: none; }
+}
+
+/* Full map on small screens (moved from style.css) */
+@media (max-width: 820px) {
+  .fullmap-title > div { display: none; }
+  .fullmap-title { padding: 9px; }
+  .fullmap-footer { max-width: calc(100% - 2 * var(--edge)); bottom: calc(var(--edge) + 34px); }
+  .map-controls { top: auto; bottom: calc(var(--edge) + 96px); translate: none; }
+}
+
+/* ---------- Rotate your phone ---------- */
+#rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 40%, #1c1f26, #08090b 70%);
+}
+@media (orientation: portrait) and (pointer: coarse) and (max-width: 900px) {
+  #rotate-overlay { display: flex; }
+}
+.rotate-phone {
+  position: relative;
+  width: 64px;
+  height: 108px;
+  margin-bottom: 18px;
+  border: 4px solid var(--text);
+  border-radius: 14px;
+  animation: ui-rotate 2.2s var(--ease-out) infinite;
+}
+.rotate-phone span {
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 18px;
+  height: 4px;
+  translate: -50% 0;
+  border-radius: 2px;
+  background: var(--taxi);
+}
+@keyframes ui-rotate {
+  0%, 20% { transform: rotate(0deg); }
+  55%, 80% { transform: rotate(-90deg); }
+  100% { transform: rotate(0deg); }
+}
+.rotate-title { font-size: 22px; font-weight: 800; }
+.rotate-sub { font-size: 14px; color: var(--text-2); }
+.rotate-btn {
+  margin-top: 18px;
+  padding: 13px 28px;
+  border-radius: 999px;
+  background: var(--taxi);
+  color: var(--taxi-ink);
+  font-size: 15px;
+  font-weight: 800;
+}

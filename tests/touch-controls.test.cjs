@@ -14,6 +14,7 @@ function element(attributes = {}) {
   return {
     hidden: false,
     textContent: '',
+    dataset: {},
     classList: {
       add: (name) => classes.add(name),
       remove: (name) => classes.delete(name),
@@ -48,10 +49,12 @@ function harness({ coarse = true, mode = 'person' } = {}) {
   const root = element();
   const stick = element();
   const knob = element();
-  const buttons = Object.fromEntries(['up', 'down'].map((action) => [action, element({ 'data-touch-action': action })]));
-  const labels = Object.fromEntries(Object.keys(buttons).map((action) => [action, element()]));
+  // Android build: hold buttons (forward / backward / up / down) and the one-shot horn
+  const buttons = Object.fromEntries(['forward', 'backward', 'up', 'down'].map((action) => [action, element({ 'data-touch-action': action })]));
+  buttons.horn = element({ 'data-touch-tap': 'horn' });
+  const labels = Object.fromEntries(['forward', 'backward', 'up', 'down'].map((action) => [action, element()]));
+  for (const [action, button] of Object.entries(buttons)) button.querySelector = () => labels[action] || null;
   root.querySelectorAll = () => Object.values(buttons);
-  root.querySelector = (selector) => labels[selector.match(/"(.*?)"/)[1]];
   document.getElementById = (id) => ({ 'touch-controls': root, 'touch-stick': stick, 'touch-stick-knob': knob })[id];
   const input = Object.fromEntries(['forward', 'backward', 'left', 'right', 'up', 'down'].map((action) => [action, 0]));
   const controller = {
@@ -59,7 +62,7 @@ function harness({ coarse = true, mode = 'person' } = {}) {
     setTouchInput(action, value) { input[action] = value; },
     clearTouchInput() { for (const action of Object.keys(input)) input[action] = 0; }
   };
-  const { TouchControls } = loadModule(source, { globals: { window, document } });
+  const { TouchControls } = loadModule(source, { globals: { window, document, setTimeout } });
   const controls = new TouchControls(controller);
   return { controls, window, document, media, root, stick, knob, buttons, labels, input };
 }
@@ -74,20 +77,20 @@ test('stick preserves analog strength and normalizes diagonal input with a radia
   stick.dispatch('pointermove', { clientX: 70 });
   assert.equal(input.right, 0, 'small motions stay in the deadzone');
   stick.dispatch('pointermove', { clientX: 86 });
-  near(input.right, (0.5 - 0.15) / 0.85);
+  near(input.right, (22 / 52 - 0.12) / 0.88);
   assert.equal(input.left, 0);
   assert.equal(input.forward, 0);
   stick.dispatch('pointermove', { clientX: 164, clientY: -36 });
   near(input.right, Math.SQRT1_2);
   near(input.forward, Math.SQRT1_2);
   near(Math.hypot(input.right, input.forward), 1);
-  near(Math.hypot(parseFloat(knob.style.getPropertyValue('--stick-x')), parseFloat(knob.style.getPropertyValue('--stick-y'))), 44);
+  near(Math.hypot(parseFloat(knob.style.getPropertyValue('--stick-x')), parseFloat(knob.style.getPropertyValue('--stick-y'))), 52);
   assert.equal(stick.hasPointerCapture(1), true);
 });
 
 test('stick and multiple held button pointers release independently', () => {
   const { stick, buttons, input } = harness({ mode: 'helicopter' });
-  stick.dispatch('pointerdown', { clientY: 20 });
+  stick.dispatch('pointerdown', { clientY: 0 });
   buttons.up.dispatch('pointerdown', { pointerId: 2 });
   buttons.up.dispatch('pointerdown', { pointerId: 3 });
   buttons.down.dispatch('pointerdown', { pointerId: 4 });
@@ -128,48 +131,63 @@ for (const type of ['pointercancel', 'lostpointercapture']) {
 
 test('mode changes clear touches and expose the relevant actions', () => {
   const { controls, stick, buttons, labels, input } = harness();
-  assert.equal(labels.up.textContent, 'Jump');
-  assert.equal(buttons.up.hidden, false);
-  assert.equal(buttons.down.hidden, true);
-  stick.dispatch('pointerdown', { clientY: 20 });
+  const visible = () => Object.entries(buttons).filter(([, button]) => !button.hidden).map(([key]) => key).sort();
+  assert.deepEqual(visible(), ['forward', 'up']);
+  assert.equal(labels.up.textContent, 'JUMP');
+  assert.equal(labels.forward.textContent, 'RUN');
+  stick.dispatch('pointerdown', { clientY: 0 });
   buttons.up.dispatch('pointerdown', { pointerId: 2 });
   controls.setMode('helicopter');
   assert.equal(Object.values(input).some(Boolean), false);
   assert.equal(stick.hasPointerCapture(1), false);
   assert.equal(buttons.up.hasPointerCapture(2), false);
-  assert.equal(labels.up.textContent, 'Ascend');
-  assert.equal(buttons.up.hidden, false);
-  assert.equal(buttons.down.hidden, false);
+  assert.deepEqual(visible(), ['down', 'forward', 'up']);
+  assert.equal(labels.up.textContent, 'UP');
   controls.setMode('car');
-  assert.equal(buttons.up.hidden, true);
-  assert.equal(buttons.down.hidden, true);
+  assert.deepEqual(visible(), ['backward', 'forward', 'horn']);
+  assert.equal(labels.forward.textContent, 'GAS');
+  assert.equal(labels.backward.textContent, 'BRAKE');
   buttons.up.dispatch('pointerdown', { pointerId: 3 });
   assert.equal(input.up, 0, 'hidden actions cannot receive input');
   controls.setMode('cyclist');
-  assert.equal(buttons.up.hidden, true);
-  assert.equal(buttons.down.hidden, true);
+  assert.deepEqual(visible(), ['backward', 'forward']);
+});
+
+test('the gas button and the stick drive forward together; the horn is a one-shot tap', () => {
+  const { controls, stick, buttons, input } = harness({ mode: 'car' });
+  const taps = [];
+  controls.onTap = (name) => taps.push(name);
+  stick.dispatch('pointerdown', { clientY: 40 });
+  assert.ok(input.forward > 0 && input.forward < 1, 'a partial stick push is analog');
+  buttons.forward.dispatch('pointerdown', { pointerId: 2 });
+  assert.equal(input.forward, 1, 'holding GAS is full throttle');
+  buttons.forward.dispatch('pointerup', { pointerId: 2 });
+  assert.ok(input.forward > 0 && input.forward < 1, 'releasing GAS falls back to the stick');
+  buttons.horn.dispatch('pointerdown', { pointerId: 3 });
+  assert.deepEqual(taps, ['horn']);
+  assert.equal(Object.values(input).filter((v) => v === 1).length, 0, 'the horn holds no movement input');
 });
 
 test('disabling controls clears held input and blocks new input until enabled', () => {
   const { controls, root, stick, buttons, input } = harness();
-  stick.dispatch('pointerdown', { clientY: 20 });
+  stick.dispatch('pointerdown', { clientY: 0 });
   buttons.up.dispatch('pointerdown', { pointerId: 2 });
   controls.setEnabled(false);
   assert.equal(root.hidden, true);
   assert.equal(Object.values(input).some(Boolean), false);
-  stick.dispatch('pointerdown', { clientY: 20 });
+  stick.dispatch('pointerdown', { clientY: 0 });
   buttons.up.dispatch('pointerdown', { pointerId: 3 });
   assert.equal(Object.values(input).some(Boolean), false);
   controls.setEnabled(true);
   assert.equal(root.hidden, false);
-  stick.dispatch('pointerdown', { clientY: 20 });
+  stick.dispatch('pointerdown', { clientY: 0 });
   assert.equal(input.forward, 1);
 });
 
 for (const interruption of ['blur', 'hidden', 'resize']) {
   test(`${interruption} resets all held input and pointer captures`, () => {
     const { window, document, stick, buttons, input } = harness();
-    stick.dispatch('pointerdown', { clientY: 20 });
+    stick.dispatch('pointerdown', { clientY: 0 });
     buttons.up.dispatch('pointerdown', { pointerId: 2 });
     if (interruption === 'hidden') {
       document.hidden = true;
@@ -190,7 +208,7 @@ test('desktop controls stay hidden until a coarse pointer or first touch is avai
   media.matches = true;
   media.dispatch('change');
   assert.equal(root.hidden, false);
-  stick.dispatch('pointerdown', { clientY: 20 });
+  stick.dispatch('pointerdown', { clientY: 0 });
   media.matches = false;
   media.dispatch('change');
   assert.equal(root.hidden, true);

@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { QUALITY } from './quality.js';
 import { buildRoadNetwork } from './road-network.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
@@ -28,8 +29,8 @@ import {
 // Cars and buses follow the road graph, obey signals, yield at crossings and react to collisions.
 // Vehicles replenish around the player; pedestrian-system.js manages the nearby walking population.
 
-const NUM_CARS = 200;
-const NUM_BUSES = 12;
+const NUM_CARS = QUALITY.cars; // 200 on desktop (quality.js)
+const NUM_BUSES = QUALITY.buses;
 
 // Intelligent Driver Model: max acceleration, comfortable braking, time headway, standstill gap; the sideways
 // acceleration drivers accept in bends, which sets how fast they take each turn or lane shift; and how hard they brake
@@ -57,9 +58,10 @@ const CAR_KINDS = {
 
 // Retire distant actors even when looking their way: keeping them indefinitely starves upcoming streets.
 // Replacements may enter the far view, but nearby visible roads and sidewalks are protected from pop-in.
-const VEHICLE_RADIUS = 380;
-const NEAR_RADIUS = 350;
-const VEHICLE_SPAWN_DISTANCE = 250;
+// Fewer cars on phones live in a proportionally smaller ring, so street density stays the same
+const VEHICLE_RADIUS = 380 * QUALITY.trafficRadiusScale;
+const NEAR_RADIUS = 350 * QUALITY.trafficRadiusScale;
+const VEHICLE_SPAWN_DISTANCE = 250 * QUALITY.trafficRadiusScale;
 
 // 8-row LED destination sign atlas (route badge + destination) aligned with the 4-slot bus livery cycle
 // (slots 0/2 = Current MTA Blue/Gold, slot 1 = Select Bus Service, slot 3 = Classic White/Blue)
@@ -440,9 +442,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
   // Add vehicle contact shadows last + pre-allocated Clustered SpotLight / PointLight pools
   group.add(carShadowInst, busShadowInst);
 
-  const HEADLIGHT_POOL_SIZE = 96;
-  const POLICE_LIGHT_POOL_SIZE = 6;
-  const MAX_LIGHT_DIST = 115;
+  const HEADLIGHT_POOL_SIZE = QUALITY.carLightPool;
+  const POLICE_LIGHT_POOL_SIZE = QUALITY.policeLightPool;
+  const MAX_LIGHT_DIST = 115 * QUALITY.lightDistanceScale;
   const MAX_LIGHT_DIST_SQ = MAX_LIGHT_DIST * MAX_LIGHT_DIST;
 
   const trafficLightsGroup = new THREE.Group();
@@ -2181,8 +2183,8 @@ function createHighwayTraffic(scene, lanes) {
   let flareCount = 0;
 
   // Clustered SpotLight pool for nearby highway cars (within 105 m)
-  const HWY_SPOT_POOL = 28;
-  const HWY_LIGHT_DIST = 105;
+  const HWY_SPOT_POOL = QUALITY.highwaySpotPool;
+  const HWY_LIGHT_DIST = 105 * QUALITY.lightDistanceScale;
   const HWY_LIGHT_DIST_SQ = HWY_LIGHT_DIST * HWY_LIGHT_DIST;
   const hwyLightsGroup = new THREE.Group();
   hwyLightsGroup.name = 'HighwayClusteredLights';

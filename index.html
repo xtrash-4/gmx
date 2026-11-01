@@ -4,7 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop New York</title>
-  <link rel="icon" href="data:," />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <!-- Android: installable PWA, fullscreen and theme colour -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
   <meta name="description" content="Photorealistic GTA-style 3D Slop New York simulation built with Three.js WebGPURenderer and TSL shaders featuring complete Manhattan street map (125th St to Battery Park), third-person navigation (Person, Car, Cyclist, Helicopter), and 11 cinematic cameras at 60 FPS." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js dev branch pinned to a commit (builds committed to mrdoob/three.js@dev, served by jsDelivr) -->
@@ -65,13 +71,15 @@
   <link rel="modulepreload" href="./js/audio-sources.js" />
   <link rel="modulepreload" href="./js/audio-acoustics.js" />
   <link rel="modulepreload" href="./js/audio-system.js" />
+  <link rel="modulepreload" href="./js/quality.js" />
   <link rel="modulepreload" href="./js/main.js" />
   <script type="module" src="./js/main.js"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261022-repo-link" />
+  <link rel="stylesheet" href="./css/style.css?v=20261101-android" />
+  <link rel="stylesheet" href="./css/hud.css?v=20261101-android" />
 </head>
 <body>
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
@@ -101,6 +109,14 @@
       <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
       <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m20 20-4.6-4.6"/></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+      <symbol id="i-gas" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></symbol>
+      <symbol id="i-brake" viewBox="0 0 24 24"><path d="M12 5v14M5.5 12.5 12 19l6.5-6.5"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-horn" viewBox="0 0 24 24"><path d="M4 10v4h3l6 4V6l-6 4H4zM16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+      <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.2 17.5a8.6 8.6 0 1 1 15.6 0"/><path d="m12 13.6 4-4.6"/><circle cx="12" cy="13.8" r="1.4"/></symbol>
+      <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
     </defs>
   </svg>
 
@@ -111,62 +127,83 @@
       <div class="loader-title">Slop New York</div>
       <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
       <div id="loading-status">Loading city code and data...</div>
+      <button id="loading-play" class="loader-play" type="button" hidden>Tap to play</button>
     </div>
   </div>
 
   <!-- 3D WebGPU Viewport Container -->
   <main id="canvas-container" aria-label="3D Interactive Slop New York Viewport"></main>
 
-  <!-- Top-Left: Brand & Renderer Telemetry -->
-  <header class="hud hud-top-left">
-    <div class="panel brand">
-      <span class="mta-bullet" aria-hidden="true">NY</span>
-      <div class="brand-titles">
-        <div class="brand-heading">
-          <h1>Slop New York</h1>
-          <a class="repo-link" href="https://github.com/mrdoob/slop-newyork/" target="_blank" rel="noopener noreferrer" aria-label="Slop New York on GitHub (opens in a new tab)">GitHub <span aria-hidden="true">↗</span></a>
-        </div>
-        <div class="brand-subtitle">three.js · WebGPU · TSL · <span id="hud-fps" class="fps-ok">60</span> fps</div>
-      </div>
-    </div>
-  </header>
+  <!-- ============================== HUD (Android build: simple, thumb-friendly) ============================== -->
 
-  <!-- Top-Right Toolbar: Time of Day, Teleport, Map & Clean View -->
-  <div class="hud hud-top-right">
-    <div id="hud-toolbar" class="panel toolbar">
-      <div class="time-switch" role="group" aria-label="Atmosphere &amp; time of day">
-        <button id="time-golden" class="time-btn active" data-time="golden" type="button" title="Golden Hour">
-          <svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span class="seg-label">Golden Hour</span>
-        </button>
-        <button id="time-midday" class="time-btn" data-time="midday" type="button" title="Sunny Midday">
-          <svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span class="seg-label">Midday</span>
-        </button>
-        <button id="time-twilight" class="time-btn" data-time="twilight" type="button" title="Blue Hour">
-          <svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span class="seg-label">Blue Hour</span>
-        </button>
-        <button id="time-midnight" class="time-btn" data-time="midnight" type="button" title="Night 23:00">
-          <svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span class="seg-label">Night</span>
-        </button>
-      </div>
-      <span class="toolbar-divider" aria-hidden="true"></span>
-      <button id="btn-teleport" class="tool-btn" type="button" popovertarget="teleport-popover" title="Teleport the active player">
-        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span class="tool-label">Teleport</span><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-down"/></svg>
-      </button>
-      <button id="btn-open-map" class="tool-btn" type="button" title="Full New York City street map [M]">
-        <svg class="icon" aria-hidden="true"><use href="#i-map"/></svg><span class="tool-label">Map</span><kbd>M</kbd>
-      </button>
-      <span class="toolbar-divider" aria-hidden="true"></span>
-      <button id="btn-sound" class="tool-btn icon-only" type="button" title="Mute sound [N]" aria-label="Mute sound" aria-pressed="true">
-        <svg class="icon" aria-hidden="true"><use href="#i-sound"/></svg>
-      </button>
-      <button id="btn-toggle-hud" class="tool-btn icon-only" type="button" title="Clean view: hide the HUD [H]" aria-label="Hide HUD" aria-pressed="false">
-        <svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye-off"/></svg>
-      </button>
+  <!-- Top-left: round radar, street-name signs and frame rate -->
+  <div class="ui ui-tl">
+    <aside id="minimap-card" class="ui-radar" aria-label="Live street radar" title="Open the full map [M]">
+      <canvas id="minimap-canvas"></canvas>
+      <span class="ui-radar-north" aria-hidden="true">N</span>
+    </aside>
+    <div class="ui-tl-info">
+      <div id="hud-location" class="location" aria-live="off"></div>
+      <div class="ui-fps"><span id="hud-fps" class="fps-ok">60</span> fps</div>
     </div>
   </div>
 
-  <!-- Teleport Destinations (native popover: light-dismiss & Esc) -->
-  <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport the active player">
+  <!-- Top-centre: walk / drive / cycle / fly -->
+  <nav id="mode-switch" class="ui ui-modes" aria-label="Travel mode">
+    <span class="mode-indicator" aria-hidden="true"></span>
+    <button id="mode-person" class="ui-mode" data-mode="person" type="button" title="Walk [1]"><svg class="icon" aria-hidden="true"><use href="#i-walk"/></svg><span class="ui-mode-label">Walk</span></button>
+    <button id="mode-car" class="ui-mode active" data-mode="car" type="button" title="Drive [2]"><svg class="icon" aria-hidden="true"><use href="#i-car"/></svg><span class="ui-mode-label">Drive</span></button>
+    <button id="mode-cyclist" class="ui-mode" data-mode="cyclist" type="button" title="Cycle [3]"><svg class="icon" aria-hidden="true"><use href="#i-bike"/></svg><span class="ui-mode-label">Cycle</span></button>
+    <button id="mode-helicopter" class="ui-mode" data-mode="helicopter" type="button" title="Fly [4]"><svg class="icon" aria-hidden="true"><use href="#i-heli"/></svg><span class="ui-mode-label">Fly</span></button>
+  </nav>
+
+  <!-- Top-right: four round icon buttons -->
+  <div id="hud-toolbar" class="ui ui-tr">
+    <button id="btn-teleport" class="ui-icon-btn" type="button" popovertarget="teleport-popover" title="Teleport" aria-label="Teleport"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg></button>
+    <button id="btn-open-map" class="ui-icon-btn" type="button" title="Map [M]" aria-label="Map"><svg class="icon" aria-hidden="true"><use href="#i-map"/></svg></button>
+    <button id="cam-menu-btn" class="ui-icon-btn" type="button" popovertarget="camera-popover" title="Camera [V]" aria-label="Camera"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg></button>
+    <button id="btn-settings" class="ui-icon-btn" type="button" popovertarget="settings-popover" title="Settings" aria-label="Settings"><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg></button>
+  </div>
+
+  <!-- Bottom-centre: speedometer (+ keyboard guide on desktop) -->
+  <div class="ui ui-bc">
+    <div id="hud-controls-hint" class="controls-hint"></div>
+    <section id="hud-cluster" class="ui-speedo" aria-label="Speed">
+      <div class="ui-speedo-row">
+        <button id="cam-prev" class="ui-cam-step" type="button" title="Previous camera" aria-label="Previous camera"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
+        <div class="ui-speed"><span id="hud-speed">0</span><span class="ui-speed-unit">mph</span></div>
+        <button id="cam-next" class="ui-cam-step" type="button" title="Next camera" aria-label="Next camera"><svg class="icon icon-sm" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+      </div>
+      <div class="ui-meter" aria-hidden="true"><span id="hud-speed-meter"></span></div>
+      <div class="ui-speedo-sub"><span id="hud-active-mode">NYC Yellow Taxi</span> · <span id="hud-active-camera">3rd-Person Chase</span><span class="ui-alt"> · <span id="hud-altitude">0</span> ft</span></div>
+    </section>
+  </div>
+
+  <!-- Touch controls (phones & tablets): joystick on the left, action buttons on the right -->
+  <section id="touch-controls" aria-label="Touch controls" hidden>
+    <div id="touch-stick" role="group" aria-label="Joystick: steer and move">
+      <span class="touch-stick-ring" aria-hidden="true"></span>
+      <span id="touch-stick-knob" aria-hidden="true"></span>
+    </div>
+    <div class="touch-pad" role="group" aria-label="Actions">
+      <button class="touch-btn touch-btn-main" data-touch-action="forward" type="button" aria-label="Gas"><svg class="icon" aria-hidden="true"><use href="#i-gas"/></svg><span data-touch-label="forward">GAS</span></button>
+      <button class="touch-btn touch-btn-alt" data-touch-action="backward" type="button" aria-label="Brake"><svg class="icon" aria-hidden="true"><use href="#i-brake"/></svg><span data-touch-label="backward">BRAKE</span></button>
+      <button class="touch-btn touch-btn-up" data-touch-action="up" type="button" aria-label="Jump"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg><span data-touch-label="up">JUMP</span></button>
+      <button class="touch-btn touch-btn-down" data-touch-action="down" type="button" aria-label="Down"><svg class="icon" aria-hidden="true"><use href="#i-down"/></svg><span data-touch-label="down">DOWN</span></button>
+      <button class="touch-btn touch-btn-horn" data-touch-tap="horn" type="button" aria-label="Horn"><svg class="icon" aria-hidden="true"><use href="#i-horn"/></svg><span>HORN</span></button>
+    </div>
+  </section>
+
+  <!-- Portrait phones: ask for landscape (the game pauses meanwhile) -->
+  <div id="rotate-overlay" role="alert">
+    <div class="rotate-phone" aria-hidden="true"><span></span></div>
+    <div class="rotate-title">Rotate your phone</div>
+    <div class="rotate-sub">Slop New York plays in landscape</div>
+    <button id="rotate-fullscreen" class="rotate-btn" type="button">Play fullscreen</button>
+  </div>
+
+  <!-- Teleport destinations -->
+  <div id="teleport-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Teleport">
     <div class="pop-title">Teleport to</div>
     <button id="tp-empire" class="pop-item tp-btn" data-teleport="empire" type="button"><span class="pop-name">Empire State Building</span><span class="pop-sub">5th Ave · Midtown</span></button>
     <button id="tp-timessq" class="pop-item tp-btn" data-teleport="timessq" type="button"><span class="pop-name">Times Square</span><span class="pop-sub">7th Ave · Theater District</span></button>
@@ -178,83 +215,8 @@
     <button id="tp-owtc" class="pop-item tp-btn" data-teleport="owtc" type="button"><span class="pop-name">One World Trade Center</span><span class="pop-sub">Vesey St · Financial District</span></button>
   </div>
 
-  <!-- Bottom-Left: Street-Name Signs & Live GPS Radar Minimap -->
-  <div class="hud hud-bottom-left">
-    <div id="hud-location" class="location" aria-live="off"></div>
-    <aside id="minimap-card" class="panel radar" aria-label="Live NYC Street Radar Minimap" title="Open the full New York City street map [M]">
-      <canvas id="minimap-canvas"></canvas>
-      <span class="radar-north" aria-hidden="true">N</span>
-      <kbd class="radar-key">M</kbd>
-    </aside>
-  </div>
-
-  <!-- Bottom-Center: Third-Person Mode Switcher & Controls Guide -->
-  <footer class="hud hud-bottom-center">
-    <div id="hud-controls-hint" class="controls-hint"></div>
-    <nav id="mode-switch" class="panel mode-switch" aria-label="Third-Person Navigation Mode">
-      <span class="mode-indicator" aria-hidden="true"></span>
-      <button id="mode-person" class="mode-btn" data-mode="person" type="button" title="Person [1]">
-        <svg class="icon" aria-hidden="true"><use href="#i-walk"/></svg><span class="mode-label">Walk</span><kbd>1</kbd>
-      </button>
-      <button id="mode-car" class="mode-btn active" data-mode="car" type="button" title="Car · Yellow Cab [2]">
-        <svg class="icon" aria-hidden="true"><use href="#i-car"/></svg><span class="mode-label">Drive</span><kbd>2</kbd>
-      </button>
-      <button id="mode-cyclist" class="mode-btn" data-mode="cyclist" type="button" title="Cyclist [3]">
-        <svg class="icon" aria-hidden="true"><use href="#i-bike"/></svg><span class="mode-label">Cycle</span><kbd>3</kbd>
-      </button>
-      <button id="mode-helicopter" class="mode-btn" data-mode="helicopter" type="button" title="Helicopter [4]">
-        <svg class="icon" aria-hidden="true"><use href="#i-heli"/></svg><span class="mode-label">Fly</span><kbd>4</kbd>
-      </button>
-    </nav>
-  </footer>
-
-  <!-- Bottom-Right: Speed Cluster & Camera Switcher -->
-  <div class="hud hud-bottom-right">
-    <section id="hud-cluster" class="panel cluster" aria-label="Vehicle telemetry and camera">
-      <div class="gauge">
-        <div class="gauge-top">
-          <span id="hud-active-mode" class="gauge-label">NYC Yellow Taxi</span>
-          <span class="gauge-alt"><span class="gauge-alt-label">Alt</span> <span id="hud-altitude">0</span> ft</span>
-        </div>
-        <div class="gauge-speed"><span id="hud-speed">0</span><span class="gauge-unit">mph</span></div>
-        <div class="gauge-meter" aria-hidden="true"><span id="hud-speed-meter"></span></div>
-      </div>
-      <div id="camera-switch" class="camera-switch">
-        <button id="cam-prev" class="icon-btn" type="button" title="Previous camera" aria-label="Previous camera">
-          <svg class="icon" aria-hidden="true"><use href="#i-chevron-left"/></svg>
-        </button>
-        <button id="cam-menu-btn" class="camera-current" type="button" popovertarget="camera-popover" title="All cameras [V cycles]">
-          <svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg><span id="hud-active-camera">3rd-Person Chase</span><kbd>V</kbd>
-        </button>
-        <button id="cam-next" class="icon-btn" type="button" title="Next camera [V]" aria-label="Next camera">
-          <svg class="icon" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-        </button>
-      </div>
-    </section>
-  </div>
-
-  <!-- Touch input stays available in clean view; the map temporarily suspends it. -->
-  <section id="touch-controls" aria-label="Touch controls" hidden>
-    <div class="touch-movement">
-      <div id="touch-stick" role="group" aria-label="Movement joystick: drag up or down to move, left or right to turn">
-        <span class="touch-stick-axis" aria-hidden="true"></span>
-        <span id="touch-stick-knob" aria-hidden="true"></span>
-      </div>
-      <span class="touch-caption">Move &amp; steer</span>
-    </div>
-    <p class="touch-look-hint">Drag to look · Pinch to zoom</p>
-    <div class="touch-actions" role="group" aria-label="Hold to perform an action">
-      <button class="touch-action" data-touch-action="up" type="button" aria-label="Jump" aria-pressed="false" hidden>
-        <span aria-hidden="true">↑</span><span data-touch-label="up">Jump</span>
-      </button>
-      <button class="touch-action" data-touch-action="down" type="button" aria-label="Descend" aria-pressed="false" hidden>
-        <span aria-hidden="true">↓</span><span data-touch-label="down">Descend</span>
-      </button>
-    </div>
-  </section>
-
-  <!-- All Cameras: 3 Follow Cameras + 7 Iconic NYC Vantage Cameras + Auto-Director Drone -->
-  <div id="camera-popover" class="popover" popover data-side="above" data-anchor="hud-cluster" data-align="hud-cluster" aria-label="Multiple Camera Angles">
+  <!-- Cameras: 3 follow cameras, 8 scenic ones and the auto-director drone -->
+  <div id="camera-popover" class="popover" popover data-side="below" data-anchor="hud-toolbar" aria-label="Cameras">
     <div class="pop-title">Follow</div>
     <button id="cam-chase" class="pop-item cam-btn active" data-camera="chase" type="button"><span class="pop-name">3rd-Person Chase</span><kbd>5</kbd></button>
     <button id="cam-action" class="pop-item cam-btn" data-camera="action" type="button"><span class="pop-name">Low-Angle Action</span><kbd>6</kbd></button>
@@ -269,6 +231,32 @@
     <button id="cam-waterfront" class="pop-item cam-btn" data-camera="waterfront" type="button"><span class="pop-name">East River &amp; Skyline</span></button>
     <button id="cam-drone" class="pop-item cam-btn" data-camera="drone" type="button"><span class="pop-name">Auto-Director Aerial</span></button>
   </div>
+
+  <!-- Settings: time of day, graphics quality, sound, fullscreen, clean view -->
+  <div id="settings-popover" class="popover ui-settings" popover data-side="below" data-anchor="hud-toolbar" aria-label="Settings">
+    <div class="pop-title">Time of day</div>
+    <div class="ui-seg" role="group" aria-label="Time of day">
+      <button id="time-golden" class="ui-seg-btn active" data-time="golden" type="button" title="Golden hour"><svg class="icon" aria-hidden="true"><use href="#i-golden"/></svg><span>Golden</span></button>
+      <button id="time-midday" class="ui-seg-btn" data-time="midday" type="button" title="Midday"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><span>Day</span></button>
+      <button id="time-twilight" class="ui-seg-btn" data-time="twilight" type="button" title="Blue hour"><svg class="icon" aria-hidden="true"><use href="#i-twilight"/></svg><span>Dusk</span></button>
+      <button id="time-midnight" class="ui-seg-btn" data-time="midnight" type="button" title="Night"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg><span>Night</span></button>
+    </div>
+    <div class="pop-title">Graphics <span id="quality-label" class="ui-quality-now">Low</span></div>
+    <div class="ui-seg" role="group" aria-label="Graphics quality">
+      <button class="ui-seg-btn quality-btn" data-quality="low" type="button" title="No shadows or reflections: smoothest on phones"><span>Low</span></button>
+      <button class="ui-seg-btn quality-btn" data-quality="medium" type="button" title="Sun shadows: flagship phones"><span>Medium</span></button>
+      <button class="ui-seg-btn quality-btn" data-quality="high" type="button" title="Original: reflections, MSAA, full traffic (PC)"><span>High</span></button>
+    </div>
+    <div class="ui-settings-note">Changing graphics reloads the city</div>
+    <div class="ui-toggles">
+      <button id="btn-sound" class="ui-toggle" type="button" aria-label="Mute sound" aria-pressed="true"><svg class="icon" aria-hidden="true"><use href="#i-sound"/></svg><span>Sound</span></button>
+      <button id="btn-fullscreen" class="ui-toggle" type="button" aria-label="Fullscreen" hidden><svg class="icon" aria-hidden="true"><use href="#i-fullscreen"/></svg><span>Fullscreen</span></button>
+      <button id="btn-toggle-hud" class="ui-toggle" type="button" aria-label="Hide HUD" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-eye-off"/></svg><span>Hide HUD</span></button>
+    </div>
+  </div>
+
+  <!-- Clean view: one small button brings the HUD back -->
+  <button id="btn-show-hud" class="ui-icon-btn ui-show-hud" type="button" title="Show HUD [H]" aria-label="Show HUD"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></button>
 
   <!-- Full-Screen Interactive New York City Street Map ([M]) -->
   <section id="fullmap-modal" class="fullmap-modal hidden" role="dialog" aria-modal="true" aria-label="Full New York City Interactive Street Map">

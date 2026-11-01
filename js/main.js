@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, smoothstep } from 'three/tsl';
+import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2, vec4, smoothstep, renderOutput } from 'three/tsl';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
+import { QUALITY, setQuality, DynamicResolution } from './quality.js';
 import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
@@ -21,6 +23,16 @@ import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 
 // Application setup, shader warm-up and frame loop.
+
+// Fullscreen and landscape lock (Android Chrome; the lock is only allowed while fullscreen). Must run in a tap handler.
+async function enterLandscapeFullscreen() {
+  try {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+    }
+    await screen.orientation?.lock?.('landscape');
+  } catch { /* refused (desktop, iOS): keep playing as is */ }
+}
 
 async function initApp() {
   const container = document.getElementById('canvas-container');
@@ -52,15 +64,18 @@ async function initApp() {
   await showLoadingStage('Initializing graphics...');
 
   // 1. Initialize Three.js WebGPURenderer with 32-bit float reversedDepthBuffer
+  // Quality profile (quality.js): phones skip MSAA, SSR and sun shadows and render at a dynamic resolution.
+  document.body.dataset.quality = QUALITY.id;
+  console.info(`[quality] ${QUALITY.id} (${QUALITY.source}${QUALITY.isMobile ? ', mobile' : ''})`);
   const renderer = new THREE.WebGPURenderer({
-    antialias: true,
+    antialias: QUALITY.antialias,
     powerPreference: 'high-performance',
     reversedDepthBuffer: true
   });
-  renderer.setPixelRatio(1.0);
+  const dynamicResolution = new DynamicResolution(renderer);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
+  renderer.shadowMap.enabled = QUALITY.shadows;
+  renderer.lighting = new ClusteredLighting(...QUALITY.clusteredLights);
   container.appendChild(renderer.domElement);
 
   // Start-up phase timings (logged once as "[init] ...") to keep load-time regressions traceable
@@ -142,6 +157,7 @@ async function initApp() {
 
   const cameraSystem = new CameraSystem(renderer.domElement, controllerManager);
   const touchControls = new TouchControls(controllerManager);
+  const isPhoneLike = () => QUALITY.isMobile || touchControls.available;
   const soundButton = document.getElementById('btn-sound');
   const audioSystem = new CityAudioSystem({ controllerManager, trafficSystem, highwayTraffic, streetDetails }, {
     onStateChange: updateSoundButton
@@ -197,6 +213,15 @@ async function initApp() {
     });
   }
 
+  // Without SSR there's no normal / metal-roughness G-buffer: the transparent decals, steam and contact shadows that
+  // write only those MRT slots would compile to a fragment shader with no outputs (and vanish), so drop their MRT.
+  if (!QUALITY.ssr) {
+    scene.traverse((object) => {
+      const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : [];
+      for (const material of materials) if (material.mrtNode) material.mrtNode = null;
+    });
+  }
+
   // 5. TSL RenderPipeline with Half-Res Screen Space Reflections (SSRNode), Bloom & Filmic Toning
   //    Fade out distant and matte surfaces so SSR spends its rays on visible glossy reflections.
   await showLoadingStage('Setting up visual effects, map and interface...');
@@ -205,42 +230,58 @@ async function initApp() {
   // them spares the GPU writing 3 x 4 samples per pixel to memory every frame (transient, memoryless attachments where
   // the browser supports them). The multisampled depth stays stored: SSR reads it.
   scenePass.renderTarget.storeMultisampledColorBuffer = false;
-  const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
-  const maxSSRRoughness = 0.75;
-  const sceneMRT = mrt({
-    output: output,
-    normal: normalView,
-    metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
-  });
-  sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
-  sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
-  scenePass.setMRT(sceneMRT);
+  let sceneMRT = null;
+  let scenePassColor;
+  let reflections;
+  if (QUALITY.ssr) {
+    const ssrFade = smoothstep(360.0, 180.0, positionView.z.negate());
+    const maxSSRRoughness = 0.75;
+    sceneMRT = mrt({
+      output: output,
+      normal: normalView,
+      metalRough: vec2(roughness.lessThan(maxSSRRoughness).select(metalness.mul(ssrFade), 0), roughness)
+    });
+    sceneMRT.setBlendMode('normal', new THREE.BlendMode(THREE.MaterialBlending));
+    sceneMRT.setBlendMode('metalRough', new THREE.BlendMode(THREE.MaterialBlending));
+    scenePass.setMRT(sceneMRT);
 
-  const scenePassColor = scenePass.getTextureNode('output');
-  const scenePassDepth = scenePass.getTextureNode('depth');
-  const scenePassNormal = scenePass.getTextureNode('normal');
-  const scenePassMetalRough = scenePass.getTextureNode('metalRough');
+    scenePassColor = scenePass.getTextureNode('output');
+    const scenePassDepth = scenePass.getTextureNode('depth');
+    const scenePassNormal = scenePass.getTextureNode('normal');
+    const scenePassMetalRough = scenePass.getTextureNode('metalRough');
 
-  const ssrPass = ssr(scenePassColor, scenePassDepth, scenePassNormal, {
-    metalnessNode: scenePassMetalRough.r,
-    roughnessNode: scenePassMetalRough.g,
-    camera: cameraSystem.camera
-  });
-  ssrPass.resolutionScale = 0.5;
-  ssrPass.blurQuality = 1;
-  ssrPass.maxDistance.value = 42;
-  ssrPass.thickness.value = 0.85;
-  // Fewer coarse steps, then refine detected hits to keep reflection edges precise.
-  ssrPass.quality.value = 0.25;
-  ssrPass.binaryRefine = true;
-  ssrPass.intensity.value = 0.50;
-  ssrPass.screenEdgeFadeBlack = true;
+    const ssrPass = ssr(scenePassColor, scenePassDepth, scenePassNormal, {
+      metalnessNode: scenePassMetalRough.r,
+      roughnessNode: scenePassMetalRough.g,
+      camera: cameraSystem.camera
+    });
+    ssrPass.resolutionScale = 0.5;
+    ssrPass.blurQuality = 1;
+    ssrPass.maxDistance.value = 42;
+    ssrPass.thickness.value = 0.85;
+    // Fewer coarse steps, then refine detected hits to keep reflection edges precise.
+    ssrPass.quality.value = 0.25;
+    ssrPass.binaryRefine = true;
+    ssrPass.intensity.value = 0.50;
+    ssrPass.screenEdgeFadeBlack = true;
 
-  // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
-  const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
-  const reflections = ssrPass.mul(reflectionMask);
-  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections);
-  const renderPipeline = new THREE.RenderPipeline(renderer, colorGrade.outputNode);
+    // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
+    const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
+    reflections = ssrPass.mul(reflectionMask);
+  } else {
+    // Phones: one colour attachment only (no normal / metal-roughness MRT, no SSR ray march).
+    scenePassColor = scenePass.getTextureNode('output');
+    reflections = vec4(0);
+  }
+  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections, { bloomScale: QUALITY.bloomScale, bloom: QUALITY.bloom });
+  let renderPipeline;
+  if (QUALITY.fxaa) {
+    // FXAA needs display-ready sRGB input: tone map and convert first, then anti-alias (replaces MSAA on phones).
+    renderPipeline = new THREE.RenderPipeline(renderer, fxaa(renderOutput(colorGrade.outputNode)));
+    renderPipeline.outputColorTransform = false;
+  } else {
+    renderPipeline = new THREE.RenderPipeline(renderer, colorGrade.outputNode);
+  }
 
   // 6. Wire UI Controls (Strictly using safe DOM APIs: textContent, classList, addEventListener)
   const modeButtons = document.querySelectorAll('[data-mode]');
@@ -300,7 +341,7 @@ async function initApp() {
 
   // The taxi-yellow pill under the selected mode glides from button to button
   function placeModeIndicator() {
-    const active = modeSwitch ? modeSwitch.querySelector('.mode-btn.active') : null;
+    const active = modeSwitch ? modeSwitch.querySelector('[data-mode].active') : null;
     if (!active) return;
     modeSwitch.style.setProperty('--ind-x', `${active.offsetLeft}px`);
     modeSwitch.style.setProperty('--ind-w', `${active.offsetWidth}px`);
@@ -508,16 +549,47 @@ async function initApp() {
   const openMapBtn = document.getElementById('btn-open-map');
   if (openMapBtn) openMapBtn.addEventListener('click', () => mapSystem.toggleFullMap(true));
 
+  // Graphics quality (quality.js): mark the active profile, reload with a new one
+  const qualityLabel = document.getElementById('quality-label');
+  if (qualityLabel) qualityLabel.textContent = QUALITY.label;
+  document.querySelectorAll('[data-quality]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.quality === QUALITY.id);
+    btn.addEventListener('click', () => {
+      closePopovers();
+      if (btn.dataset.quality !== QUALITY.id) {
+        savePlayerState();
+        setQuality(btn.dataset.quality);
+      }
+    });
+  });
+
+  // Fullscreen + landscape lock on phones (orientation lock only works while fullscreen)
+  const fullscreenBtn = document.getElementById('btn-fullscreen');
+  if (fullscreenBtn && document.documentElement.requestFullscreen && isPhoneLike()) {
+    fullscreenBtn.hidden = false;
+    fullscreenBtn.addEventListener('click', () => {
+      closePopovers();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else enterLandscapeFullscreen();
+    });
+  }
+  document.getElementById('rotate-fullscreen')?.addEventListener('click', enterLandscapeFullscreen);
+
+  // Horn on the touch pad
+  touchControls.onTap = (name) => {
+    if (name === 'horn' && !mapSystem.isFullMapOpen) audioSystem.honk(controllerManager.getActiveEntity());
+  };
+
   if (hudToggleBtn) {
     hudToggleBtn.addEventListener('click', () => {
       document.body.classList.toggle('hud-minimized');
       const isMin = document.body.classList.contains('hud-minimized');
       hudToggleBtn.setAttribute('aria-pressed', String(isMin));
-      hudToggleBtn.setAttribute('aria-label', isMin ? 'Show HUD' : 'Hide HUD');
-      hudToggleBtn.title = isMin ? 'Show the HUD [H]' : 'Clean view: hide the HUD [H]';
       if (isMin) closePopovers();
     });
   }
+  // Clean view keeps one small eye button to bring the HUD back
+  document.getElementById('btn-show-hud')?.addEventListener('click', () => hudToggleBtn?.click());
 
   // Global keyboard shortcuts for modes (1-4), cameras (V / 5-0), and HUD (H)
   window.addEventListener('keydown', (e) => {
@@ -588,7 +660,7 @@ async function initApp() {
 
   // Compile shaders behind the loading screen. Overlapping compileAsync() jobs keep compilation moving
   // while individual jobs yield to the browser.
-  const COMPILE_POOL = 16;
+  const COMPILE_POOL = QUALITY.compilePool;
   const nextTask = () => (globalThis.scheduler?.yield ? globalThis.scheduler.yield() : new Promise((resolve) => setTimeout(resolve, 0)));
   async function precompileShaders() {
     await showLoadingStage('Preparing reflections and bloom...');
@@ -634,7 +706,7 @@ async function initApp() {
     await showLoadingStage(`Compiling scene shaders... 0 / ${jobs.length} batches`);
     setLoadingProgress(0);
     renderer.setRenderTarget(scenePass.renderTarget);
-    renderer.setMRT(sceneMRT);
+    if (sceneMRT) renderer.setMRT(sceneMRT);
     const compile = async (object) => {
       // Each compile starts in a task of its own: compileAsync() keeps one precompilation state on the renderer,
       // which must not be mid-step for two of them in the same microtask checkpoint
@@ -678,9 +750,23 @@ async function initApp() {
 
   if (elFps) elFps.textContent = '60';
 
+  // Frame cap: 90 / 120 Hz phones would otherwise render twice as often and overheat. A small tolerance keeps a
+  // 60 Hz display from skipping every other vsync.
+  const minFrameMs = QUALITY.maxFps ? 1000 / QUALITY.maxFps - 1.5 : 0;
+
+  // A phone held upright shows the "rotate your phone" screen: skip the simulation and rendering to save battery
+  const portraitPhone = matchMedia('(orientation: portrait) and (pointer: coarse) and (max-width: 900px)');
+  portraitPhone.addEventListener('change', (e) => {
+    if (e.matches) { closePopovers(); touchControls.reset(); }
+  });
+
   renderer.setAnimationLoop((now) => {
-    const rawDt = (now - lastTime) * 0.001;
+    if (warmedUp && portraitPhone.matches) { lastTime = now; return; }
+    if (warmedUp && minFrameMs && now - lastTime < minFrameMs) return;
+    const frameMs = now - lastTime;
+    const rawDt = frameMs * 0.001;
     lastTime = now;
+    if (warmedUp && !document.hidden) dynamicResolution.update(frameMs);
     const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
     elapsed += dt;
 
@@ -707,7 +793,8 @@ async function initApp() {
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
     lightingSystem.update(cameraSystem.currentPos);
-    mapSystem.update();
+    // Phones redraw the 2D radar at half rate; the full map stays smooth while panning
+    if (!QUALITY.isMobile || mapSystem.isFullMapOpen || (frameCount & 1) === 0) mapSystem.update();
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
@@ -745,8 +832,20 @@ async function initApp() {
         markInit('gpu');
         console.log(`[init] ${initTimings.join(', ')}`);
         initTimings = null;
-        if (loadingOverlay) loadingOverlay.classList.add('hidden');
         audioSystem.ready = true;
+        // Phones: a "Tap to play" button, whose tap may enter fullscreen and lock landscape (needs a user gesture)
+        const playBtn = document.getElementById('loading-play');
+        if (playBtn && isPhoneLike()) {
+          if (loadingStatus) loadingStatus.textContent = 'Manhattan is ready';
+          if (loadingTrack) loadingTrack.hidden = true;
+          playBtn.hidden = false;
+          playBtn.addEventListener('click', () => {
+            enterLandscapeFullscreen();
+            if (loadingOverlay) loadingOverlay.classList.add('hidden');
+          }, { once: true });
+        } else if (loadingOverlay) {
+          loadingOverlay.classList.add('hidden');
+        }
         setLoadingProgress(1);
       });
     }
@@ -780,3 +879,8 @@ async function initApp() {
 }
 
 initApp();
+
+// Offline cache & "Add to Home screen" on Android (sw.js). Only on https hosting, so local edits are never cached.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}

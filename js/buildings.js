@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { QUALITY } from './quality.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createFireEscapes } from './fire-escapes.js';
 import { addBuildingDetails } from './building-details.js';
@@ -666,7 +667,7 @@ function buildCityBlocks(scene, landmarkColliders = []) {
     new THREE.Color(0xfff2d6)  // Watch boutique warm ivory
   ];
 
-  const STORE_SPOT_POOL = 28;
+  const STORE_SPOT_POOL = QUALITY.storeSpotPool;
   const STORE_SPOT_INTENSITY = 46 * ((0.85 - 0.15) / 0.90);
   const storeSpotPool = [];
   for (let i = 0; i < STORE_SPOT_POOL; i++) {
@@ -687,7 +688,7 @@ function buildCityBlocks(scene, landmarkColliders = []) {
   // ============================================================================
   let lastStreamX = Infinity;
   let lastStreamZ = Infinity;
-  const STREAM_RADIUS = 560; // High-detail architectural radius around player in meters
+  const STREAM_RADIUS = QUALITY.buildingStreamRadius; // High-detail architectural radius around player in meters (560 on desktop)
 
   // Streaming rewrites only the active prefix; unused pool capacity need not cross the GPU queue.
   function flagRange(attribute, count) {
