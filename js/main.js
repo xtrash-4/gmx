@@ -3,6 +3,10 @@ import { pass, mrt, output, normalView, positionView, metalness, roughness, vec2
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { QUALITY, setQuality, DynamicResolution } from './quality.js';
+import { createProfiler } from './profiler.js';
+
+// ?profile=1 measures every system per frame (window.__perf.report()); off for players
+const PROFILE = new URLSearchParams(location.search).get('profile') === '1';
 import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
@@ -68,11 +72,14 @@ async function initApp() {
   document.body.dataset.quality = QUALITY.id;
   console.info(`[quality] ${QUALITY.id} (${QUALITY.source}${QUALITY.isMobile ? ', mobile' : ''})`);
   const renderer = new THREE.WebGPURenderer({
+    trackTimestamp: PROFILE,
     antialias: QUALITY.antialias,
     powerPreference: 'high-performance',
     reversedDepthBuffer: true
   });
   const dynamicResolution = new DynamicResolution(renderer);
+  const prof = PROFILE ? createProfiler() : null;
+  if (PROFILE) globalThis.__app = { renderer, THREE }; // scene & camera added below, for console measurements
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = QUALITY.shadows;
   renderer.lighting = new ClusteredLighting(...QUALITY.clusteredLights);
@@ -156,6 +163,7 @@ async function initApp() {
   }
 
   const cameraSystem = new CameraSystem(renderer.domElement, controllerManager);
+  if (PROFILE) Object.assign(globalThis.__app, { scene, cameraSystem });
   const touchControls = new TouchControls(controllerManager);
   const isPhoneLike = () => QUALITY.isMobile || touchControls.available;
   const soundButton = document.getElementById('btn-sound');
@@ -186,7 +194,8 @@ async function initApp() {
   const cullingRoots = ['ManhattanCityGrid', 'ManhattanCityBlocks', 'ManhattanStreetDetails', 'ManhattanLandmarks', 'Boroughs', 'RoadMarkings']
     .map((name) => scene.getObjectByName(name))
     .filter(Boolean);
-  setupSceneCulling(scene, cullingRoots, lightingSystem.sunLight.shadow);
+  // No sun shadows (quality.js): no shadow stand-ins to build
+  setupSceneCulling(scene, cullingRoots, QUALITY.shadows ? lightingSystem.sunLight.shadow : null);
 
   // Initialize static world matrices once, including the chunks and shadow proxies created above.
   // Crowd, tree and building-detail animation changes instance/pose buffers, not Object3D transforms.
@@ -760,7 +769,20 @@ async function initApp() {
     if (e.matches) { closePopovers(); touchControls.reset(); }
   });
 
+  // Low / Medium (quality.js fogFar): the far plane follows the haze, so the city beyond it is not drawn at all
+  const baseFar = cameraSystem.camera.far;
+  const applyFogFar = (cam) => {
+    if (!QUALITY.fogFar) return;
+    const far = Math.min(baseFar, Math.max(2000, lightingSystem.fogFarDistance(cam.position.y)));
+    if (Math.abs(far - cam.far) > cam.far * 0.02) {
+      cam.far = far;
+      cam.updateProjectionMatrix();
+    }
+  };
+
+  let benchActive = false; // ?profile=1: __app.bench() renders fixed views while the game loop waits
   renderer.setAnimationLoop((now) => {
+    if (benchActive) { lastTime = now; return; }
     if (warmedUp && portraitPhone.matches) { lastTime = now; return; }
     if (warmedUp && minFrameMs && now - lastTime < minFrameMs) return;
     const frameMs = now - lastTime;
@@ -771,9 +793,13 @@ async function initApp() {
     elapsed += dt;
 
     // Update 3rd-person controllers, camera, signals, traffic & vehicle collisions, building LODs, and dynamic shadow focus
+    prof?.start();
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
+    prof?.mark('player');
     cameraSystem.update(dt, elapsed);
+    applyFogFar(cameraSystem.camera);
+    prof?.mark('camera');
     streetDetails.signalClock.value = elapsed;
     trafficSystem.update(
       dt,
@@ -783,7 +809,9 @@ async function initApp() {
       controllerManager.activeMode,
       cameraSystem.camera
     );
+    prof?.mark('traffic+peds');
     highwayTraffic.update(dt, cameraSystem.camera, controllerManager.getActiveEntity(), controllerManager.activeMode);
+    prof?.mark('highway');
     if (!document.hidden && now >= nextPlayerSave) {
       savePlayerState();
       nextPlayerSave = now + 5000;
@@ -791,14 +819,20 @@ async function initApp() {
     if (boroughs.update) boroughs.update(elapsed); // Roosevelt Island Tramway cabins
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
+    prof?.mark('buildings');
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
+    prof?.mark('street+trees');
     lightingSystem.update(cameraSystem.currentPos);
     // Phones redraw the 2D radar at half rate; the full map stays smooth while panning
     if (!QUALITY.isMobile || mapSystem.isFullMapOpen || (frameCount & 1) === 0) mapSystem.update();
+    prof?.mark('map');
     audioSystem.update(dt, elapsed, cameraSystem.camera, lightingSystem.activePresetId === 'midnight');
+    prof?.mark('audio');
     if (warmedUp) updateSceneCulling(cameraSystem.camera.position); // the warm-up frame draws every chunk
+    prof?.mark('culling');
     // Traffic collisions can move the player after controller updates; finalize moving hierarchies here.
     for (const root of dynamicRoots) root.updateMatrixWorld();
+    prof?.mark('matrices');
 
     // Render frame via TSL RenderPipeline (SSR + Bloom)
     if (!warmedUp) {
@@ -821,6 +855,7 @@ async function initApp() {
       markInit('warmup');
     }
     renderPipeline.render();
+    if (prof && warmedUp) prof.endFrame(renderer, dynamicResolution.scale);
     if (!warmedUp) {
       warmedUp = true;
       markInit('firstFrame');
@@ -876,6 +911,78 @@ async function initApp() {
       renderLocation(getLocationLabel(where.x, where.z));
     }
   });
+
+  // ?profile=1 only: repeatable GPU/CPU numbers. Pauses the game, renders fixed camera views `frames` times each and
+  // returns the median render CPU time, GPU time (timestamp queries), draw calls and triangles per view.
+  // Independent of the frame rate the browser allows the tab, so before/after numbers compare.
+  const benchViews = [
+      { name: 'street N', p: [4, 2, 410], t: [4, 2, -3000] },
+      { name: 'street S', p: [4, 2, 410], t: [4, 2, 4000] },
+      { name: 'street E', p: [4, 2, 410], t: [3000, 2, 410] },
+      { name: 'roof 120m', p: [4, 120, 410], t: [4, 20, -2500] },
+      { name: 'heli 450m', p: [4, 450, 1200], t: [4, 0, -3000] }
+  ];
+  // Freeze the game on one of the views above for a screenshot; __app.hold() resumes
+  if (PROFILE) globalThis.__app.hold = (name) => {
+    const v = benchViews.find((view) => view.name === name);
+    benchActive = !!v;
+    if (!v) return;
+    const cam = cameraSystem.camera;
+    cam.position.set(...v.p);
+    cam.lookAt(...v.t);
+    cam.updateMatrixWorld();
+    applyFogFar(cam);
+    cityBlocks.update(cam.position.x, cam.position.z);
+    if (streetDetails.update) streetDetails.update(cam);
+    updateSceneCulling(cam.position);
+    renderer.info.reset();
+    renderer._nodes.nodeFrame.update();
+    renderer.info.frame = renderer._nodes.nodeFrame.frameId;
+    renderPipeline.render();
+  };
+  if (PROFILE) globalThis.__app.bench = async (frames = 24) => {
+    const cam = cameraSystem.camera;
+    const saved = { p: cam.position.clone(), q: cam.quaternion.clone() };
+    const views = benchViews;
+    const median = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    const device = renderer.backend.device;
+    benchActive = true;
+    const out = {};
+    try {
+      for (const v of views) {
+        cam.position.set(...v.p);
+        cam.lookAt(...v.t);
+        cam.updateMatrixWorld();
+        applyFogFar(cam);
+        cityBlocks.update(cam.position.x, cam.position.z);
+        if (streetDetails.update) streetDetails.update(cam);
+        updateSceneCulling(cam.position);
+        const cpu = [], gpu = [];
+        let draws = 0, tris = 0;
+        for (let i = 0; i < frames + 4; i++) {
+          // what three.js' animation loop does before each frame (the scene pass renders once per frame id)
+          renderer.info.reset();
+          renderer._nodes.nodeFrame.update();
+          renderer.info.frame = renderer._nodes.nodeFrame.frameId;
+          const t0 = performance.now();
+          renderPipeline.render();
+          const t1 = performance.now();
+          draws = renderer.info.render.drawCalls;
+          tris = renderer.info.render.triangles;
+          await device.queue.onSubmittedWorkDone();
+          const g = renderer.backend.trackTimestamp ? await renderer.resolveTimestampsAsync('render') : NaN;
+          if (i >= 4) { cpu.push(t1 - t0); gpu.push(g); } // the first frames may compile pipelines
+        }
+        out[v.name] = { cpu: +median(cpu).toFixed(2), gpu: +median(gpu).toFixed(2), draws, ktris: Math.round(tris / 1000) };
+      }
+    } finally {
+      cam.position.copy(saved.p);
+      cam.quaternion.copy(saved.q);
+      cam.updateMatrixWorld();
+      benchActive = false;
+    }
+    return out;
+  };
 }
 
 initApp();

@@ -217,7 +217,7 @@ class LightingSystem {
     // Sky-matched aerial perspective (replaces the flat FogExp2 colour): distant surfaces fade into the baked sky
     // radiance just above the horizon in their view direction (sun glow included), through an exponential haze layer
     // so helicopter / observatory views stay clearer than the horizon.
-    this.uFogDensity = uniform(TIME_PRESETS.golden.fogDensity);
+    this.uFogDensity = uniform(TIME_PRESETS.golden.fogDensity * QUALITY.fogScale);
     this.uFogHeight = uniform(900.0);
     if (this.envRenderTarget) this.scene.fogNode = this.createAerialFogNode();
   }
@@ -238,6 +238,19 @@ class LightingSystem {
     const meanDensity = select(abs(dy).greaterThan(1.0), ea.sub(eb).mul(H).div(dy), ea);
     const tau = this.uFogDensity.mul(dist).mul(meanDensity);
     return fog(skyColor, float(1.0).sub(exp(tau.mul(tau).negate())));
+  }
+
+  // Distance where the aerial haze (createAerialFogNode) is 97 % opaque for a camera at height cameraY, on the
+  // thinnest ray it can have: towards the top of the tallest tower (~550 m). Nothing beyond it can show through the
+  // fog, so a camera far plane there hides nothing (quality.js fogFar) and skips all those draws.
+  fogFarDistance(cameraY) {
+    const H = this.uFogHeight.value;
+    const top = 550;
+    const lo = Math.min(Math.max(cameraY, 0), top);
+    const hi = Math.max(cameraY, top);
+    const meanDensity = hi - lo > 1 ? (H * (Math.exp(-lo / H) - Math.exp(-hi / H))) / (hi - lo) : Math.exp(-lo / H);
+    const tau = Math.sqrt(-Math.log(0.03)); // haze opacity 1 - exp(-tau^2) = 0.97
+    return tau / (this.uFogDensity.value * meanDensity);
   }
 
   bakeEnvironmentMap() {
@@ -271,8 +284,8 @@ class LightingSystem {
     this.hemiLight.intensity = p.hemiIntensity;
 
     this.scene.fog.color.setHex(p.fogColor);
-    this.scene.fog.density = p.fogDensity;
-    if (this.uFogDensity) this.uFogDensity.value = p.fogDensity;
+    this.scene.fog.density = p.fogDensity * QUALITY.fogScale;
+    if (this.uFogDensity) this.uFogDensity.value = p.fogDensity * QUALITY.fogScale;
 
     // Update physical Preetham SkyMesh uniforms
     this.sky.turbidity.value = p.turbidity;

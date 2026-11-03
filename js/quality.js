@@ -40,7 +40,9 @@ const PROFILES = {
     buildingStreamRadius: 340,
     treeLodScale: 0.55,
     cullScale: 0.55,
-    compilePool: 4
+    fogScale: 1.5, // thicker haze...
+    fogFar: true, // ...and nothing drawn beyond where it is opaque (lighting.js fogFarDistance)
+    compilePool: 16 // shader builds in flight while loading: 16 halved the compile time of 4 (measured); 32 gains nothing
   },
   // Strong phones (Snapdragon 8 Gen class) and laptops with integrated GPUs.
   medium: {
@@ -74,7 +76,9 @@ const PROFILES = {
     buildingStreamRadius: 450,
     treeLodScale: 0.75,
     cullScale: 0.75,
-    compilePool: 8
+    fogScale: 1.2,
+    fogFar: true,
+    compilePool: 16
   },
   // The original desktop settings, unchanged.
   high: {
@@ -108,6 +112,8 @@ const PROFILES = {
     buildingStreamRadius: 560,
     treeLodScale: 1,
     cullScale: 1,
+    fogScale: 1,
+    fogFar: false, // the original 60 km far plane
     compilePool: 16
   }
 };

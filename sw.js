@@ -2,7 +2,7 @@
 // cached, so the second launch loads from the phone instead of the network.
 // Stale-while-revalidate: serve the cached copy at once and refresh it in the background.
 
-const CACHE = 'slop-ny-android-v1';
+const CACHE = 'slop-ny-android-v2';
 const CACHE_HOSTS = [self.location.host, 'cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', () => self.skipWaiting());

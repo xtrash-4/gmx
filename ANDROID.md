@@ -9,6 +9,10 @@ dioptimasi untuk HP Android.
   Bisa diganti di menu ⚙️ Settings.
   - Low: tanpa bayangan matahari & pantulan (SSR), tanpa MSAA (diganti FXAA), mobil 70 (asli 200),
     pejalan kaki 110 (asli 340), lampu & detail jarak jauh dikurangi.
+  - Jarak pandang mengikuti kabut (Low & Medium): kabut sedikit lebih tebal, dan kota di balik kabut yang sudah
+    pekat tidak digambar sama sekali (−15% draw call, −10% waktu CPU render, diukur).
+  - Loading lebih cepat: kompilasi shader 16 sekaligus (10,1 dtk → 5,6 dtk di PC, diukur), tanpa menyiapkan
+    bayangan kalau bayangan mati.
   - Resolusi dinamis: kalau FPS turun, resolusi otomatis diturunkan sedikit; naik lagi kalau lancar.
   - FPS dikunci 60 (HP 90/120 Hz tidak panas), radar digambar 30 Hz, game berhenti saat HP tegak (hemat baterai).
 - **UI baru** (`css/hud.css`): radar bulat kiri atas, mode (Jalan / Mobil / Sepeda / Heli) di tengah atas,
@@ -41,3 +45,11 @@ WebGPU di Chrome Android hanya aktif di alamat **https** (atau `localhost`), jad
 
 Tambahkan parameter di link untuk mencoba setelan: `?quality=low&shadows=1&cars=90&renderScale=0.7`
 (semua nama setelan ada di `js/quality.js`).
+
+## Mengukur performa
+
+Buka dengan `?profile=1`, lalu di console:
+
+- `__perf.report()` — rata-rata waktu per sistem per frame (CPU, GPU, draw call, segitiga).
+- `await __app.bench()` — render 5 sudut pandang tetap dan ukur CPU/GPU-nya; angkanya bisa dibandingkan sebelum/sesudah
+  perubahan karena tidak tergantung FPS browser.
